@@ -32,25 +32,33 @@ module Selenium
       class << self
         attr_reader :driver_path
 
-        def chrome(*args)
-          Chrome::Service.new(*args)
+        def chrome(**opts)
+          Chrome::Service.new(**opts)
         end
 
-        def firefox(*args)
-          Firefox::Service.new(*args)
+        def firefox(**opts)
+          Firefox::Service.new(**opts)
         end
 
-        def ie(*args)
-          IE::Service.new(*args)
+        def ie(**opts)
+          IE::Service.new(**opts)
         end
         alias_method :internet_explorer, :ie
 
-        def edge(*args)
-          Edge::Service.new(*args)
+        def edge(**opts)
+          Edge::Service.new(**opts)
         end
 
-        def safari(*args)
-          Safari::Service.new(*args)
+        def edge_chrome(**opts)
+          EdgeChrome::Service.new(**opts)
+        end
+
+        def edge_html(**opts)
+          EdgeHtml::Service.new(**opts)
+        end
+
+        def safari(**opts)
+          Safari::Service.new(**opts)
         end
 
         def driver_path=(path)
@@ -164,7 +172,10 @@ module Selenium
       def stop_server
         return if process_exited?
 
-        connect_to_server { |http| http.get('/shutdown') }
+        connect_to_server do |http|
+          headers = WebDriver::Remote::Http::Common::DEFAULT_HEADERS.dup
+          http.get('/shutdown', headers)
+        end
       end
 
       def process_running?

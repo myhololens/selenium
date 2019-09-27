@@ -18,11 +18,16 @@
 package org.openqa.selenium.grid.web;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
-
+import com.google.common.net.MediaType;
+import org.openqa.selenium.json.Json;
 import org.openqa.selenium.remote.Command;
 import org.openqa.selenium.remote.CommandCodec;
 import org.openqa.selenium.remote.Dialect;
+import org.openqa.selenium.remote.DriverCommand;
+import org.openqa.selenium.remote.JsonToWebElementConverter;
 import org.openqa.selenium.remote.Response;
 import org.openqa.selenium.remote.ResponseCodec;
 import org.openqa.selenium.remote.codec.jwp.JsonHttpCommandCodec;
@@ -30,27 +35,38 @@ import org.openqa.selenium.remote.codec.jwp.JsonHttpResponseCodec;
 import org.openqa.selenium.remote.codec.w3c.W3CHttpCommandCodec;
 import org.openqa.selenium.remote.codec.w3c.W3CHttpResponseCodec;
 import org.openqa.selenium.remote.http.HttpClient;
+import org.openqa.selenium.remote.http.HttpHandler;
 import org.openqa.selenium.remote.http.HttpRequest;
 import org.openqa.selenium.remote.http.HttpResponse;
-import org.openqa.selenium.remote.internal.JsonToWebElementConverter;
 
-import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.Function;
 
-public class ProtocolConverter implements CommandHandler {
+import static java.net.HttpURLConnection.HTTP_OK;
+import static java.nio.charset.StandardCharsets.UTF_8;
+import static org.openqa.selenium.json.Json.MAP_TYPE;
+import static org.openqa.selenium.remote.Dialect.W3C;
+import static org.openqa.selenium.remote.http.Contents.bytes;
+import static org.openqa.selenium.remote.http.Contents.string;
 
+public class ProtocolConverter implements HttpHandler {
+
+  private final static Json JSON = new Json();
   private final static ImmutableSet<String> IGNORED_REQ_HEADERS = ImmutableSet.<String>builder()
-      .add("connection")
-      .add("keep-alive")
-      .add("proxy-authorization")
-      .add("proxy-authenticate")
-      .add("proxy-connection")
-      .add("te")
-      .add("trailer")
-      .add("transfer-encoding")
-      .add("upgrade")
-      .build();
+    .add("connection")
+    .add("content-length")
+    .add("content-type")
+    .add("keep-alive")
+    .add("proxy-authorization")
+    .add("proxy-authenticate")
+    .add("proxy-connection")
+    .add("te")
+    .add("trailer")
+    .add("transfer-encoding")
+    .add("upgrade")
+    .build();
 
   private final HttpClient client;
   private final CommandCodec<HttpRequest> downstream;
@@ -58,11 +74,12 @@ public class ProtocolConverter implements CommandHandler {
   private final ResponseCodec<HttpResponse> downstreamResponse;
   private final ResponseCodec<HttpResponse> upstreamResponse;
   private final JsonToWebElementConverter converter;
+  private final Function<HttpResponse, HttpResponse> newSessionConverter;
 
   public ProtocolConverter(
-      HttpClient client,
-      Dialect downstream,
-      Dialect upstream) {
+    HttpClient client,
+    Dialect downstream,
+    Dialect upstream) {
     this.client = Objects.requireNonNull(client);
 
     Objects.requireNonNull(downstream);
@@ -74,48 +91,45 @@ public class ProtocolConverter implements CommandHandler {
     this.upstreamResponse = getResponseCodec(upstream);
 
     converter = new JsonToWebElementConverter(null);
+
+    newSessionConverter = downstream == W3C ? this::createW3CNewSessionResponse : this::createJwpNewSessionResponse;
   }
 
   @Override
-  public void execute(HttpRequest req, HttpResponse resp) throws IOException {
+  public HttpResponse execute(HttpRequest req) throws UncheckedIOException {
     Command command = downstream.decode(req);
     // Massage the webelements
     @SuppressWarnings("unchecked")
     Map<String, ?> parameters = (Map<String, ?>) converter.apply(command.getParameters());
     command = new Command(
-        command.getSessionId(),
-        command.getName(),
-        parameters);
+      command.getSessionId(),
+      command.getName(),
+      parameters);
 
     HttpRequest request = upstream.encode(command);
 
     HttpResponse res = makeRequest(request);
 
-    Response decoded = upstreamResponse.decode(res);
-    HttpResponse response = downstreamResponse.encode(HttpResponse::new, decoded);
+    HttpResponse toReturn;
+    if (DriverCommand.NEW_SESSION.equals(command.getName()) && res.getStatus() == HTTP_OK) {
+      toReturn = newSessionConverter.apply(res);
+    } else {
+      Response decoded = upstreamResponse.decode(res);
+      toReturn = downstreamResponse.encode(HttpResponse::new, decoded);
+    }
 
-    copyToServletResponse(response, resp);
+    res.getHeaderNames().forEach(name -> {
+      if (!IGNORED_REQ_HEADERS.contains(name)) {
+        res.getHeaders(name).forEach(value -> toReturn.addHeader(name, value));
+      }
+    });
+
+    return toReturn;
   }
 
   @VisibleForTesting
-  HttpResponse makeRequest(HttpRequest request) throws IOException {
+  HttpResponse makeRequest(HttpRequest request) {
     return client.execute(request);
-  }
-
-  private void copyToServletResponse(HttpResponse response, HttpResponse resp) {
-    resp.setStatus(response.getStatus());
-
-    for (String name : response.getHeaderNames()) {
-      if (IGNORED_REQ_HEADERS.contains(name.toLowerCase())) {
-        continue;
-      }
-
-      for (String value : response.getHeaders(name)) {
-        resp.addHeader(name, value);
-      }
-    }
-
-    resp.setContent(response.consumeContentStream());
   }
 
   private CommandCodec<HttpRequest> getCommandCodec(Dialect dialect) {
@@ -142,6 +156,41 @@ public class ProtocolConverter implements CommandHandler {
       default:
         throw new IllegalStateException("Unknown dialect: " + dialect);
     }
+  }
+
+  private HttpResponse createW3CNewSessionResponse(HttpResponse response) {
+    Map<String, Object> value = JSON.toType(string(response), MAP_TYPE);
+
+    Preconditions.checkState(value.get("sessionId") != null);
+    Preconditions.checkState(value.get("value") instanceof Map);
+
+    return createResponse(ImmutableMap.of(
+      "value", ImmutableMap.of(
+        "sessionId", value.get("sessionId"),
+        "capabilities", value.get("value"))));
+  }
+
+  private HttpResponse createJwpNewSessionResponse(HttpResponse response) {
+    Map<String, Object> value = Objects.requireNonNull(Values.get(response, MAP_TYPE));
+
+    // Check to see if the values we need are set
+    Preconditions.checkState(value.get("sessionId") != null);
+    Preconditions.checkState(value.get("capabilities") instanceof Map);
+
+    return createResponse(ImmutableMap.of(
+      "status", 0,
+      "sessionId", value.get("sessionId"),
+      "value", value.get("capabilities")));
+  }
+
+
+  private HttpResponse createResponse(ImmutableMap<String, Object> toSend) {
+    byte[] bytes = JSON.toJson(toSend).getBytes(UTF_8);
+
+    return new HttpResponse()
+      .setHeader("Content-Type", MediaType.JSON_UTF_8.toString())
+      .setHeader("Content-Length", String.valueOf(bytes.length))
+      .setContent(bytes(bytes));
   }
 
 }

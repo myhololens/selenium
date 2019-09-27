@@ -20,44 +20,43 @@ package org.openqa.selenium.grid.distributor;
 import org.openqa.selenium.grid.data.NodeStatus;
 import org.openqa.selenium.grid.node.Node;
 import org.openqa.selenium.grid.node.remote.RemoteNode;
-import org.openqa.selenium.grid.web.CommandHandler;
 import org.openqa.selenium.json.Json;
 import org.openqa.selenium.remote.http.HttpClient;
+import org.openqa.selenium.remote.http.HttpHandler;
 import org.openqa.selenium.remote.http.HttpRequest;
 import org.openqa.selenium.remote.http.HttpResponse;
-import org.openqa.selenium.remote.tracing.DistributedTracer;
 
 import java.util.Objects;
 
-public class AddNode implements CommandHandler {
+import static org.openqa.selenium.remote.http.Contents.string;
 
-  private final DistributedTracer tracer;
+public class AddNode implements HttpHandler {
+
   private final Distributor distributor;
   private final Json json;
   private final HttpClient.Factory httpFactory;
 
   public AddNode(
-      DistributedTracer tracer,
       Distributor distributor,
       Json json,
       HttpClient.Factory httpFactory) {
-    this.tracer = Objects.requireNonNull(tracer);
     this.distributor = Objects.requireNonNull(distributor);
     this.json = Objects.requireNonNull(json);
     this.httpFactory = Objects.requireNonNull(httpFactory);
   }
 
   @Override
-  public void execute(HttpRequest req, HttpResponse resp) {
-    NodeStatus status = json.toType(req.getContentString(), NodeStatus.class);
+  public HttpResponse execute(HttpRequest req) {
+    NodeStatus status = json.toType(string(req), NodeStatus.class);
 
     Node node = new RemoteNode(
-        tracer,
         httpFactory,
         status.getNodeId(),
         status.getUri(),
         status.getStereotypes().keySet());
 
     distributor.add(node);
+
+    return new HttpResponse();
   }
 }

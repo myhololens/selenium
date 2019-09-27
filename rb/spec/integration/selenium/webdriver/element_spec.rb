@@ -24,25 +24,18 @@ module Selenium
     describe Element do
       it 'should click' do
         driver.navigate.to url_for('formPage.html')
-        driver.find_element(id: 'imageButton').click
-      end
-
-      it 'should raise wrong error if different element receives click in Chrome', only: {browser: %i[chrome]} do
-        driver.navigate.to url_for('click_tests/overlapping_elements.html')
-        element_error = 'Other element would receive the click: <div id="over"><\/div>'
-        error = /is not clickable at point \(\d+, \d+\)\. #{element_error}/
-        expect { driver.find_element(id: 'contents').click }
-          .to raise_error(Selenium::WebDriver::Error::UnknownError, error)
+        expect { driver.find_element(id: 'imageButton').click }.not_to raise_error
+        reset_driver!(1) if %i[safari safari_preview].include? GlobalTestEnv.browser
       end
 
       # Safari returns "click intercepted" error instead of "element click intercepted"
-      it 'should raise if different element receives click', except: {browser: %i[chrome safari safari_preview]} do
+      it 'should raise if different element receives click', except: {browser: %i[safari safari_preview]} do
         driver.navigate.to url_for('click_tests/overlapping_elements.html')
         expect { driver.find_element(id: 'contents').click }.to raise_error(Error::ElementClickInterceptedError)
       end
 
       # Safari returns "click intercepted" error instead of "element click intercepted"
-      it 'should raise if element is partially covered', except: {browser: %i[chrome safari safari_preview]} do
+      it 'should raise if element is partially covered', except: {browser: %i[safari safari_preview]} do
         driver.navigate.to url_for('click_tests/overlapping_elements.html')
         expect { driver.find_element(id: 'other_contents').click }.to raise_error(Error::ElementClickInterceptedError)
       end
@@ -50,14 +43,14 @@ module Selenium
       it 'should submit' do
         driver.navigate.to url_for('formPage.html')
         wait_for_element(id: 'submitButton')
-        driver.find_element(id: 'submitButton').submit
+        expect { driver.find_element(id: 'submitButton').submit }.not_to raise_error
         reset_driver!
       end
 
       it 'should send string keys' do
         driver.navigate.to url_for('formPage.html')
         wait_for_element(id: 'working')
-        driver.find_element(id: 'working').send_keys('foo', 'bar')
+        expect { driver.find_element(id: 'working').send_keys('foo', 'bar') }.not_to raise_error
       end
 
       it 'should send key presses' do
@@ -108,7 +101,7 @@ module Selenium
 
       it 'should clear' do
         driver.navigate.to url_for('formPage.html')
-        driver.find_element(id: 'withText').clear
+        expect { driver.find_element(id: 'withText').clear }.not_to raise_error
       end
 
       it 'should get and set selected' do

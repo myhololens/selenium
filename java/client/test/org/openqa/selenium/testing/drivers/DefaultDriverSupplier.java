@@ -44,7 +44,7 @@ public class DefaultDriverSupplier implements Supplier<WebDriver> {
           .put(BrowserType.FIREFOX, FirefoxDriver::new)
           .put(BrowserType.HTMLUNIT, HtmlUnitDriver::new)
           .put(BrowserType.IE, InternetExplorerDriver::new)
-          .put(BrowserType.EDGE, EdgeDriver::new)
+          .put(BrowserType.EDGE, TestEdgeDriver::new)
           .put(BrowserType.SAFARI, SafariDriver::new)
           .put("Safari Technology Preview", SafariDriver::new)
           .build();
@@ -52,7 +52,7 @@ public class DefaultDriverSupplier implements Supplier<WebDriver> {
   private Capabilities capabilities;
 
   DefaultDriverSupplier(Capabilities capabilities) {
-    this.capabilities = new ImmutableCapabilities(capabilities);
+    this.capabilities = capabilities;
   }
 
   @Override

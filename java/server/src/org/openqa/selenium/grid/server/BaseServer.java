@@ -17,51 +17,46 @@
 
 package org.openqa.selenium.grid.server;
 
-import static java.net.HttpURLConnection.HTTP_OK;
-import static java.nio.charset.StandardCharsets.UTF_8;
-import static java.util.concurrent.TimeUnit.SECONDS;
-
-import com.google.common.collect.ImmutableMap;
-import com.google.common.net.MediaType;
-
+import org.eclipse.jetty.servlet.FilterHolder;
+import org.eclipse.jetty.servlets.CrossOriginFilter;
 import org.openqa.selenium.WebDriverException;
-import org.openqa.selenium.grid.web.Routes;
-import org.openqa.selenium.json.Json;
 import org.openqa.selenium.net.NetworkUtils;
 import org.openqa.selenium.net.PortProber;
-import org.seleniumhq.jetty9.security.ConstraintMapping;
-import org.seleniumhq.jetty9.security.ConstraintSecurityHandler;
-import org.seleniumhq.jetty9.server.Connector;
-import org.seleniumhq.jetty9.server.HttpConfiguration;
-import org.seleniumhq.jetty9.server.HttpConnectionFactory;
-import org.seleniumhq.jetty9.server.ServerConnector;
-import org.seleniumhq.jetty9.servlet.ServletContextHandler;
-import org.seleniumhq.jetty9.servlet.ServletHolder;
-import org.seleniumhq.jetty9.util.log.JavaUtilLog;
-import org.seleniumhq.jetty9.util.log.Log;
-import org.seleniumhq.jetty9.util.security.Constraint;
-import org.seleniumhq.jetty9.util.thread.QueuedThreadPool;
+import org.openqa.selenium.remote.http.HttpHandler;
+import org.eclipse.jetty.security.ConstraintMapping;
+import org.eclipse.jetty.security.ConstraintSecurityHandler;
+import org.eclipse.jetty.server.Connector;
+import org.eclipse.jetty.server.HttpConfiguration;
+import org.eclipse.jetty.server.HttpConnectionFactory;
+import org.eclipse.jetty.server.ServerConnector;
+import org.eclipse.jetty.servlet.ServletContextHandler;
+import org.eclipse.jetty.servlet.ServletHolder;
+import org.eclipse.jetty.util.log.JavaUtilLog;
+import org.eclipse.jetty.util.log.Log;
+import org.eclipse.jetty.util.security.Constraint;
+import org.eclipse.jetty.util.thread.QueuedThreadPool;
 
+import javax.servlet.DispatcherType;
+import javax.servlet.Servlet;
 import java.io.UncheckedIOException;
 import java.net.BindException;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.EnumSet;
 import java.util.Objects;
 import java.util.logging.Logger;
 
-import javax.servlet.Servlet;
+import static java.util.concurrent.TimeUnit.SECONDS;
 
 public class BaseServer<T extends BaseServer> implements Server<T> {
 
   private static final Logger LOG = Logger.getLogger(BaseServer.class.getName());
   private static final int MAX_SHUTDOWN_RETRIES = 8;
 
-  private final org.seleniumhq.jetty9.server.Server server;
-  private final List<Routes> routes = new ArrayList<>();
+  private final org.eclipse.jetty.server.Server server;
   private final ServletContextHandler servletContextHandler;
   private final URL url;
+  private HttpHandler handler;
 
   public BaseServer(BaseServerOptions options) {
     int port = options.getPort() == 0 ? PortProber.findFreePort() : options.getPort();
@@ -81,24 +76,8 @@ public class BaseServer<T extends BaseServer> implements Server<T> {
     }
 
     Log.setLog(new JavaUtilLog());
-    this.server = new org.seleniumhq.jetty9.server.Server(
+    this.server = new org.eclipse.jetty.server.Server(
         new QueuedThreadPool(options.getMaxServerThreads()));
-
-    Json json = new Json();
-    addRoute(
-        Routes.get("/status").using(
-        (in, out) -> {
-          String value = json.toJson(ImmutableMap.of(
-              "value", ImmutableMap.of(
-                  "ready", false,
-                  "message", "Stub server without handlers")));
-
-          out.setHeader("Content-Type", MediaType.JSON_UTF_8.toString());
-          out.setHeader("Cache-Control", "none");
-          out.setStatus(HTTP_OK);
-
-          out.setContent(value.getBytes(UTF_8));
-        }).build());
 
     this.servletContextHandler = new ServletContextHandler(ServletContextHandler.SECURITY);
     ConstraintSecurityHandler
@@ -121,6 +100,19 @@ public class BaseServer<T extends BaseServer> implements Server<T> {
     enableOtherMapping.setMethodOmissions(new String[]{"TRACE"});
     enableOtherMapping.setPathSpec("/");
     securityHandler.addConstraintMapping(enableOtherMapping);
+
+    // Allow CORS: Whether the Selenium server should allow web browser connections from any host
+    if (options.getAllowCORS()) {
+      FilterHolder
+          filterHolder = servletContextHandler.addFilter(CrossOriginFilter.class, "/*", EnumSet
+          .of(DispatcherType.REQUEST));
+      filterHolder.setInitParameter("allowedOrigins", "*");
+
+      // Warning user
+      LOG.warning("You have enabled CORS requests from any host. "
+                  + "Be careful not to visit sites which could maliciously "
+                  + "try to start Selenium sessions on your machine");
+    }
 
     server.setHandler(servletContextHandler);
 
@@ -159,12 +151,12 @@ public class BaseServer<T extends BaseServer> implements Server<T> {
   }
 
   @Override
-  public void addRoute(Routes route) {
+  public T setHandler(HttpHandler handler) {
     if (server.isRunning()) {
       throw new IllegalStateException("You may not add a handler to a running server");
     }
-
-    this.routes.add(route);
+    this.handler = Objects.requireNonNull(handler, "Handler to use must be set.");
+    return (T) this;
   }
 
   @Override
@@ -176,15 +168,11 @@ public class BaseServer<T extends BaseServer> implements Server<T> {
   public T start() {
     try {
       // If there are no routes, we've done something terribly wrong.
-      if (routes.isEmpty()) {
+      if (handler == null) {
         throw new IllegalStateException("There must be at least one route specified");
       }
-      Routes first = routes.remove(0);
-      Routes routes = Routes.combine(first, this.routes.toArray(new Routes[0]))
-          .decorateWith(W3CCommandHandler::new)
-          .build();
 
-      addServlet(new CommandHandlerServlet(routes), "/*");
+      addServlet(new HttpHandlerServlet(handler.with(new WrapExceptions().andThen(new AddWebDriverSpecHeaders()))), "/*");
 
       server.start();
 

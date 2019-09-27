@@ -1,4 +1,25 @@
-4.0.0.alpha1 (unreleased)
+4.0.0.alpha3 (2019-07-08)
+=========================
+
+Ruby:
+  * All documented driver capabilities supported in respective browser Options class by constructor and accessor
+  * Driver constructor :options and :desired_capabilities generate the same capabilities for local and remote execution
+  * Deprecated :options as keyword for initializing browser Options classes
+
+Chrome:
+  * Add support for browser logging with latest versions of chromedriver
+
+Edge:
+  * Add support for Chromium based implementation
+
+4.0.0.alpha2 (2019-05-02)
+=========================
+
+Ruby:
+  * Fixed an issue with previous alpha release which lead to removed files
+    being packaged inside the gem
+
+4.0.0.alpha1 (2019-05-01)
 =========================
 
 Ruby:
@@ -26,6 +47,38 @@ Firefox:
   * Fixed an issue when passing :profile string to Firefox::Options.new would
     result in NoMethodError. Now it will find a profile with such name on your
     system and use it accordingly (issue #7119)
+
+3.142.4 (2019-09-02)
+====================
+
+Chrome:
+  * Added support for new command for getting logs in ChromeDriver 76+
+    with W3C mode on
+
+3.142.3 (2019-05-21)
+====================
+
+Firefox:
+  * Fixed a regression when Firefox binary path was not sent to GeckoDriver
+    by default and browser could not be located (issue #7219)
+
+3.142.2 (2019-05-11)
+====================
+
+Chrome:
+  * Fixed an issue when getting/setting network conditions and sending CDP
+    commands didn't work with Grid (issue #7174)
+
+Safari:
+  * Fixed an issue when getting/setting permissions and attaching debugger
+    didn't work with Grid (issue #7174)
+
+3.142.1 (2019-05-07)
+====================
+
+Firefox:
+  * Fixed an issue when processing error in legacy driver would result
+    in NoMethodError (issue #7178)
 
 3.142.0 (2019-04-24)
 ====================

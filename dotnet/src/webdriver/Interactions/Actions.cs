@@ -66,6 +66,9 @@ namespace OpenQA.Selenium.Interactions
             this.actionExecutor = actionExecutor;
         }
 
+        /// <summary>
+        /// Returns the <see cref="IActionExecutor"/> for the driver.
+        /// </summary>
         protected IActionExecutor ActionExecutor
         {
             get { return this.actionExecutor; }
@@ -417,6 +420,11 @@ namespace OpenQA.Selenium.Interactions
         public void Perform()
         {
             this.actionExecutor.PerformActions(this.actionBuilder.ToActionSequenceList());
+        }
+
+        public void Reset()
+        {
+            this.actionBuilder = new ActionBuilder();
         }
 
         /// <summary>

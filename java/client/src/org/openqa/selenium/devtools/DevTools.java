@@ -19,9 +19,15 @@ package org.openqa.selenium.devtools;
 
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 
+import org.openqa.selenium.devtools.target.Target;
+import org.openqa.selenium.devtools.target.model.TargetId;
+import org.openqa.selenium.devtools.target.model.TargetInfo;
+import org.openqa.selenium.remote.SessionId;
+
 import java.io.Closeable;
 import java.time.Duration;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -32,7 +38,7 @@ public class DevTools implements Closeable {
 
   private final Duration timeout = Duration.ofSeconds(10);
   private final Connection connection;
-  private Target.SessionId cdpSession = null;
+  private SessionId cdpSession = null;
 
   public DevTools(Connection connection) {
     this.connection = connection;
@@ -40,7 +46,8 @@ public class DevTools implements Closeable {
 
   @Override
   public void close() {
-    connection.close();
+    connection.sendAndWait(
+        cdpSession, Target.detachFromTarget(Optional.of(cdpSession), Optional.empty()), timeout);
   }
 
   public <X> X send(Command<X> command) {
@@ -55,26 +62,34 @@ public class DevTools implements Closeable {
     connection.addListener(event, handler);
   }
 
+  public void createSessionIfThereIsNotOne() {
+    if (cdpSession == null) {
+      createSession();
+    }
+  }
+
   public void createSession() {
     // Figure out the targets.
-    Set<Target.TargetInfo> infos = connection.sendAndWait(cdpSession, Target.getTargets(), timeout);
+    Set<TargetInfo> infos = connection.sendAndWait(cdpSession, Target.getTargets(), timeout);
 
     // Grab the first "page" type, and glom on to that.
     // TODO: Find out which one might be the current one
-    Target.TargetId targetId = infos.stream()
+    TargetId targetId = infos.stream()
         .filter(info -> "page".equals(info.getType()))
-        .map(Target.TargetInfo::getTargetId)
+        .map(TargetInfo::getTargetId)
         .findAny()
         .orElseThrow(() -> new DevToolsException("Unable to find target id of a page"));
 
     // Start the session.
-    cdpSession = connection.sendAndWait(cdpSession, Target.attachToTarget(targetId), timeout);
+    cdpSession =
+        connection
+            .sendAndWait(cdpSession, Target.attachToTarget(targetId, Optional.empty()), timeout);
 
     try {
       // We can do all of these in parallel, and we don't care about the result.
       CompletableFuture.allOf(
           // Set auto-attach to true and run for the hills.
-          connection.send(cdpSession, Target.setAutoAttach(true)),
+          connection.send(cdpSession, Target.setAutoAttach(true, false, Optional.empty())),
           // Clear the existing logs
           connection.send(cdpSession, Log.clear()))
           .get(timeout.toMillis(), MILLISECONDS);
@@ -90,5 +105,9 @@ public class DevTools implements Closeable {
     } catch (TimeoutException e) {
       throw new org.openqa.selenium.TimeoutException(e);
     }
+  }
+
+  public SessionId getCdpSession() {
+    return cdpSession;
   }
 }

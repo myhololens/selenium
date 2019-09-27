@@ -2,14 +2,12 @@
 
 module Rake
   class Task
-    attr_accessor :deps
-    attr_accessor :out
+    attr_accessor :deps, :out
   end
 end
 
 class BaseGenerator
   def create_deps_(out, args)
-    # We depend on our sources
     file out => FileList[args[:srcs]] unless args[:srcs].nil?
 
     add_deps_(out, args[:srcs])
@@ -22,14 +20,11 @@ class BaseGenerator
     t.deps = args[:deps]
     t.out = out
   end
-  
+
   def add_deps_(task_name, srcs)
-    if srcs.nil?
-      return
-    end
+    return if srcs.nil?
 
     srcs.each do |src|
-      # Is the src a file or a symbol? If it's a symbol, we're good to go
       if src.is_a? Symbol
         file task_name.to_sym => [src]
       elsif src.is_a? Hash
@@ -50,12 +45,11 @@ def build_deps_(srcs)
   return deps unless srcs
 
   Array(srcs).each do |src|
-    if ($targets[src]) then
-     deps += $targets[src][:deps]
-    else
-     deps += FileList[src]
-    end
+    deps += if $targets[src]
+              $targets[src][:deps]
+            else
+              FileList[src]
+            end
   end
   deps
 end
-

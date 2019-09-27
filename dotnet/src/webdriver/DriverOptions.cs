@@ -106,6 +106,9 @@ namespace OpenQA.Selenium
         private Dictionary<string, LogLevel> loggingPreferences = new Dictionary<string, LogLevel>();
         private Dictionary<string, string> knownCapabilityNames = new Dictionary<string, string>();
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="DriverOptions"/> class.
+        /// </summary>
         protected DriverOptions()
         {
             this.AddKnownCapabilityName(CapabilityType.BrowserName, "BrowserName property");
@@ -360,6 +363,18 @@ namespace OpenQA.Selenium
         protected void AddKnownCapabilityName(string capabilityName, string typeSafeOptionName)
         {
             this.knownCapabilityNames[capabilityName] = typeSafeOptionName;
+        }
+
+        /// <summary>
+        /// Remove a capability from the list of known capabilities
+        /// </summary>
+        /// <param name="capabilityName">The name of the capability to be removed.</param>
+        protected void RemoveKnownCapabilityName(string capabilityName)
+        {
+            if (!string.IsNullOrEmpty(capabilityName) && this.knownCapabilityNames.ContainsKey(capabilityName))
+            {
+                this.knownCapabilityNames.Remove(capabilityName);
+            }
         }
 
         /// <summary>

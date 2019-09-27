@@ -32,18 +32,34 @@ const promise = require('./promise');
 const {Session} = require('./session');
 const {WebElement} = require('./webdriver');
 
-const {getAttribute, isDisplayed} = /** @suppress {undefinedVars|uselessCode} */(function() {
+const getAttribute = requireAtom(
+    './atoms/get-attribute.js',
+    '//javascript/node/selenium-webdriver/lib/atoms:get-attribute.js');
+const isDisplayed = requireAtom(
+    './atoms/is-displayed.js',
+    '//javascript/node/selenium-webdriver/lib/atoms:is-displayed.js');
+
+/**
+ * @param {string} module
+ * @param {string} bazelTarget
+ * @return {!Function}
+ */
+function requireAtom(module, bazelTarget) {
   try {
-    return {
-      getAttribute: require('./atoms/get-attribute.js'),
-      isDisplayed: require('./atoms/is-displayed.js')
-    };
+    return require(module);
   } catch (ex) {
-    throw Error(
-        'Failed to import atoms modules. If running in devmode, you need to run'
-            + ' `./go node:atoms` from the project root: ' + ex);
+    try {
+      const file = bazelTarget.slice(2).replace(':', '/');
+      return require(`../../../../bazel-genfiles/${file}`);
+    } catch (ex2) {
+      console.log(ex2);
+      throw Error(
+        `Failed to import atoms module ${module}. If running in dev mode, you`
+            + ` need to run \`bazel build ${bazelTarget}\` from the project`
+            + `root: ${ex}`);
+    }
   }
-})();
+}
 
 
 /**
@@ -320,6 +336,9 @@ const W3C_COMMAND_MAP = new Map([
   // Screenshots.
   [cmd.Name.SCREENSHOT, get('/session/:sessionId/screenshot')],
   [cmd.Name.TAKE_ELEMENT_SCREENSHOT, get('/session/:sessionId/element/:id/screenshot')],
+  // Log extensions.
+  [cmd.Name.GET_LOG, post('/session/:sessionId/se/log')],
+  [cmd.Name.GET_AVAILABLE_LOG_TYPES, get('/session/:sessionId/se/log/types')],
 ]);
 
 

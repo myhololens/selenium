@@ -23,6 +23,7 @@ import static org.openqa.selenium.WaitingConditions.elementValueToEqual;
 import static org.openqa.selenium.WaitingConditions.windowHandleCountToBe;
 import static org.openqa.selenium.support.ui.ExpectedConditions.presenceOfElementLocated;
 import static org.openqa.selenium.support.ui.ExpectedConditions.titleIs;
+import static org.openqa.selenium.testing.drivers.Browser.CHROME;
 import static org.openqa.selenium.testing.drivers.Browser.EDGE;
 import static org.openqa.selenium.testing.drivers.Browser.FIREFOX;
 import static org.openqa.selenium.testing.drivers.Browser.HTMLUNIT;
@@ -36,6 +37,7 @@ import static org.openqa.selenium.testing.TestUtilities.isNativeEventsEnabled;
 
 import org.junit.Test;
 import org.openqa.selenium.By;
+import org.openqa.selenium.Dimension;
 import org.openqa.selenium.JavascriptExecutor;
 import org.openqa.selenium.Keys;
 import org.openqa.selenium.Platform;
@@ -218,18 +220,17 @@ public class CombinedInputActionsTest extends JUnit4TestBase {
   }
 
   @Test
-  @Ignore(value = MARIONETTE, issue = "https://github.com/mozilla/geckodriver/issues/789")
   @NotYetImplemented(HTMLUNIT)
   @NotYetImplemented(SAFARI)
-  @NotYetImplemented(EDGE)
   public void testClickAfterMoveToAnElementWithAnOffsetShouldUseLastMousePosition() {
     driver.get(pages.clickEventPage);
 
     WebElement element = driver.findElement(By.id("eventish"));
+    Dimension size = element.getSize();
     Point location = element.getLocation();
 
     new Actions(driver)
-        .moveToElement(element, 20, 10)
+        .moveToElement(element, 20 - size.getWidth() / 2, 10 - size.getHeight() / 2)
         .click()
         .perform();
 
@@ -277,6 +278,7 @@ public class CombinedInputActionsTest extends JUnit4TestBase {
   @Test
   @Ignore(value = MARIONETTE, issue = "https://github.com/mozilla/geckodriver/issues/646")
   @NotYetImplemented(EDGE)
+  @NotYetImplemented(CHROME)
   public void testChordControlCutAndPaste() {
     assumeFalse("FIXME: macs don't have CONTROL key", getEffectivePlatform().is(Platform.MAC));
     assumeFalse("Windows: native events library  does not support storing modifiers state yet",
@@ -351,7 +353,6 @@ public class CombinedInputActionsTest extends JUnit4TestBase {
 
   @Test
   @NotYetImplemented(SAFARI)
-  @NotYetImplemented(EDGE)
   public void canClickOnASuckerFishStyleMenu() throws InterruptedException {
     driver.get(pages.javascriptPage);
 
@@ -377,7 +378,6 @@ public class CombinedInputActionsTest extends JUnit4TestBase {
   }
 
   @Test
-  @NotYetImplemented(EDGE)
   public void testCanClickOnSuckerFishMenuItem() {
     driver.get(pages.javascriptPage);
 

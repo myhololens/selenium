@@ -51,13 +51,6 @@ module Selenium
           expect(string).to include('user_pref("foo.boolean", true)')
         end
 
-        it 'should not let user override defaults' do
-          profile['app.update.enabled'] = true
-
-          string = read_generated_prefs
-          expect(string).to include('user_pref("app.update.enabled", false)')
-        end
-
         it 'should properly handle escaped characters' do
           profile['foo'] = 'C:\\r\\n'
 
@@ -78,27 +71,6 @@ module Selenium
 
         it 'should raise an error if the value is already stringified' do
           expect { profile['foo.bar'] = '"stringified"' }.to raise_error(ArgumentError)
-        end
-
-        it 'should enable secure SSL' do
-          profile.secure_ssl = true
-
-          string = read_generated_prefs
-          expect(string).to include('user_pref("webdriver_accept_untrusted_certs", false)')
-        end
-
-        it 'should disable secure SSL' do
-          profile.secure_ssl = false
-
-          string = read_generated_prefs
-          expect(string).to include('user_pref("webdriver_accept_untrusted_certs", true)')
-        end
-
-        it 'should change the setting for untrusted certificate issuer' do
-          profile.assume_untrusted_certificate_issuer = false
-
-          string = read_generated_prefs
-          expect(string).to include('user_pref("webdriver_assume_untrusted_issuer", false)')
         end
 
         it 'can configure a manual proxy' do
@@ -147,15 +119,24 @@ module Selenium
           expect(Dir.exist?(extension_directory)).to eq(true)
         end
 
-        it 'can install web extension' do
+        it 'can install web extension without id' do
           mooltipass = File.expand_path('../../../../../../third_party/firebug/mooltipass-1.1.87.xpi', __dir__)
           profile.add_extension(mooltipass)
           extension_directory = File.expand_path('extensions/MooltipassExtension@1.1.87', profile.layout_on_disk)
           expect(Dir.exist?(extension_directory)).to eq(true)
         end
 
+        it 'can install web extension with id' do
+          ext = File.expand_path('../../../../../../third_party/firebug/favourite_colour-1.1-an+fx.xpi', __dir__)
+          profile.add_extension(ext)
+          extension_directory = File.expand_path('extensions/favourite-colour-examples@mozilla.org', profile.layout_on_disk)
+          expect(Dir.exist?(extension_directory)).to eq(true)
+        end
+
         describe 'with browser' do
           before do
+            quit_driver
+            sleep 2
             profile['browser.startup.homepage'] = url_for('simpleTest.html')
             profile['browser.startup.page'] = 1
           end

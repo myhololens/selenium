@@ -17,20 +17,8 @@
 
 package org.openqa.selenium.grid.router;
 
-import static java.nio.charset.StandardCharsets.UTF_8;
-import static java.time.Duration.ofSeconds;
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
-import static org.openqa.selenium.json.Json.MAP_TYPE;
-import static org.openqa.selenium.remote.http.HttpMethod.GET;
-import static org.openqa.selenium.remote.http.HttpMethod.POST;
-
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
-
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -49,31 +37,28 @@ import org.openqa.selenium.grid.distributor.local.LocalDistributor;
 import org.openqa.selenium.grid.distributor.remote.RemoteDistributor;
 import org.openqa.selenium.grid.node.SessionFactory;
 import org.openqa.selenium.grid.node.local.LocalNode;
-import org.openqa.selenium.grid.testing.TestSessionFactory;
 import org.openqa.selenium.grid.server.BaseServer;
 import org.openqa.selenium.grid.server.BaseServerOptions;
 import org.openqa.selenium.grid.server.Server;
-import org.openqa.selenium.grid.server.W3CCommandHandler;
 import org.openqa.selenium.grid.sessionmap.SessionMap;
 import org.openqa.selenium.grid.sessionmap.local.LocalSessionMap;
 import org.openqa.selenium.grid.sessionmap.remote.RemoteSessionMap;
+import org.openqa.selenium.grid.testing.TestSessionFactory;
 import org.openqa.selenium.grid.web.CombinedHandler;
-import org.openqa.selenium.grid.web.CommandHandler;
 import org.openqa.selenium.grid.web.RoutableHttpClientFactory;
-import org.openqa.selenium.grid.web.Routes;
 import org.openqa.selenium.grid.web.Values;
 import org.openqa.selenium.json.Json;
 import org.openqa.selenium.net.PortProber;
 import org.openqa.selenium.remote.RemoteWebDriver;
 import org.openqa.selenium.remote.SessionId;
 import org.openqa.selenium.remote.http.HttpClient;
+import org.openqa.selenium.remote.http.HttpHandler;
 import org.openqa.selenium.remote.http.HttpRequest;
 import org.openqa.selenium.remote.http.HttpResponse;
-import org.openqa.selenium.remote.tracing.DistributedTracer;
 import org.openqa.selenium.support.ui.FluentWait;
 import org.zeromq.ZContext;
 
-import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -81,6 +66,18 @@ import java.util.Collection;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Supplier;
+
+import static java.time.Duration.ofSeconds;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+import static org.openqa.selenium.json.Json.MAP_TYPE;
+import static org.openqa.selenium.remote.http.Contents.string;
+import static org.openqa.selenium.remote.http.Contents.utf8String;
+import static org.openqa.selenium.remote.http.HttpMethod.GET;
+import static org.openqa.selenium.remote.http.HttpMethod.POST;
 
 @RunWith(Parameterized.class)
 public class EndToEndTest {
@@ -128,7 +125,6 @@ public class EndToEndTest {
         "inproc://end-to-end-sub",
         true);
 
-    DistributedTracer tracer = DistributedTracer.builder().build();
     URI nodeUri = new URI("http://localhost:4444");
     CombinedHandler handler = new CombinedHandler();
     HttpClient.Factory clientFactory = new RoutableHttpClientFactory(
@@ -136,22 +132,22 @@ public class EndToEndTest {
         handler,
         HttpClient.Factory.createDefault());
 
-    SessionMap sessions = new LocalSessionMap(tracer, bus);
+    SessionMap sessions = new LocalSessionMap(bus);
     handler.addHandler(sessions);
 
-    Distributor distributor = new LocalDistributor(tracer, bus, clientFactory, sessions);
+    Distributor distributor = new LocalDistributor(bus, clientFactory, sessions);
     handler.addHandler(distributor);
 
-    LocalNode node = LocalNode.builder(tracer, bus, clientFactory, nodeUri)
+    LocalNode node = LocalNode.builder(bus, clientFactory, nodeUri)
         .add(CAPS, createFactory(nodeUri))
         .build();
     handler.addHandler(node);
     distributor.add(node);
 
-    Router router = new Router(tracer, clientFactory, sessions, distributor);
+    Router router = new Router(clientFactory, sessions, distributor);
 
     Server<?> server = createServer();
-    server.addRoute(Routes.matching(router).using(router));
+    server.setHandler(router);
     server.start();
 
     return new Object[] { server, clientFactory };
@@ -164,60 +160,45 @@ public class EndToEndTest {
         "tcp://localhost:" + PortProber.findFreePort(),
         true);
 
-    DistributedTracer tracer = DistributedTracer.builder().build();
-    LocalSessionMap localSessions = new LocalSessionMap(tracer, bus);
+    LocalSessionMap localSessions = new LocalSessionMap(bus);
 
     HttpClient.Factory clientFactory = HttpClient.Factory.createDefault();
 
     Server<?> sessionServer = createServer();
-    sessionServer.addRoute(
-        Routes.matching(localSessions)
-            .using(localSessions)
-            .decorateWith(W3CCommandHandler::new));
+    sessionServer.setHandler(localSessions);
     sessionServer.start();
 
     HttpClient client = HttpClient.Factory.createDefault().createClient(sessionServer.getUrl());
     SessionMap sessions = new RemoteSessionMap(client);
 
     LocalDistributor localDistributor = new LocalDistributor(
-        tracer,
         bus,
         clientFactory,
         sessions);
     Server<?> distributorServer = createServer();
-    distributorServer.addRoute(
-        Routes.matching(localDistributor)
-            .using(localDistributor)
-            .decorateWith(W3CCommandHandler::new));
+    distributorServer.setHandler(localDistributor);
     distributorServer.start();
 
     Distributor distributor = new RemoteDistributor(
-        tracer,
         HttpClient.Factory.createDefault(),
         distributorServer.getUrl());
 
     int port = PortProber.findFreePort();
     URI nodeUri = new URI("http://localhost:" + port);
-    LocalNode localNode = LocalNode.builder(tracer, bus, clientFactory, nodeUri)
+    LocalNode localNode = LocalNode.builder(bus, clientFactory, nodeUri)
         .add(CAPS, createFactory(nodeUri))
         .build();
     Server<?> nodeServer = new BaseServer<>(
         new BaseServerOptions(
             new MapConfig(ImmutableMap.of("server", ImmutableMap.of("port", port)))));
-    nodeServer.addRoute(
-        Routes.matching(localNode)
-            .using(localNode)
-            .decorateWith(W3CCommandHandler::new));
+    nodeServer.setHandler(localNode);
     nodeServer.start();
 
     distributor.add(localNode);
 
-    Router router = new Router(tracer, clientFactory, sessions, distributor);
+    Router router = new Router(clientFactory, sessions, distributor);
     Server<?> routerServer = createServer();
-    routerServer.addRoute(
-        Routes.matching(router)
-            .using(router)
-            .decorateWith(W3CCommandHandler::new));
+    routerServer.setHandler(router);
     routerServer.start();
 
     return new Object[] { routerServer, clientFactory };
@@ -230,17 +211,17 @@ public class EndToEndTest {
   }
 
   private static SessionFactory createFactory(URI serverUri) {
-    class SpoofSession extends Session implements CommandHandler {
+    class SpoofSession extends Session implements HttpHandler {
 
       private SpoofSession(Capabilities capabilities) {
         super(new SessionId(UUID.randomUUID()), serverUri, capabilities);
       }
 
       @Override
-      public void execute(HttpRequest req, HttpResponse resp) {
-
+      public HttpResponse execute(HttpRequest req) throws UncheckedIOException {
+        return new HttpResponse();
       }
-    }
+   }
 
     return new TestSessionFactory((id, caps) -> new SpoofSession(caps));
   }
@@ -270,7 +251,7 @@ public class EndToEndTest {
         HttpResponse response = client.execute(new HttpRequest(GET, "/status"));
         Map<String, Object> status = Values.get(response, MAP_TYPE);
         return Boolean.TRUE.equals(status.get("ready"));
-      } catch (IOException e) {
+      } catch (UncheckedIOException e) {
         e.printStackTrace();
         return false;
       }
@@ -283,22 +264,22 @@ public class EndToEndTest {
   }
 
   @Test
-  public void shouldAllowPassthroughForW3CMode() throws IOException {
+  public void shouldAllowPassthroughForW3CMode() {
     HttpRequest request = new HttpRequest(POST, "/session");
-    request.setContent(json.toJson(
+    request.setContent(utf8String(json.toJson(
         ImmutableMap.of(
             "capabilities", ImmutableMap.of(
-                "alwaysMatch", ImmutableMap.of("browserName", "cheese")))).getBytes(UTF_8));
+                "alwaysMatch", ImmutableMap.of("browserName", "cheese"))))));
 
     HttpClient client = clientFactory.createClient(server.getUrl());
     HttpResponse response = client.execute(request);
 
     assertEquals(200, response.getStatus());
 
-    Map<String, Object> topLevel = json.toType(response.getContentString(), MAP_TYPE);
+    Map<String, Object> topLevel = json.toType(string(response), MAP_TYPE);
 
     // There should not be a numeric status field
-    assertFalse(request.getContentString(), topLevel.containsKey("status"));
+    assertFalse(string(request), topLevel.containsKey("status"));
 
     // And the value should have all the good stuff in it: the session id and the capabilities
     Map<?, ?> value = (Map<?, ?>) topLevel.get("value");
@@ -309,28 +290,28 @@ public class EndToEndTest {
   }
 
   @Test
-  public void shouldAllowPassthroughForJWPMode() throws IOException {
+  public void shouldAllowPassthroughForJWPMode() {
     HttpRequest request = new HttpRequest(POST, "/session");
-    request.setContent(json.toJson(
+    request.setContent(utf8String(json.toJson(
         ImmutableMap.of(
             "desiredCapabilities", ImmutableMap.of(
-                "browserName", "cheese"))).getBytes(UTF_8));
+                "browserName", "cheese")))));
 
     HttpClient client = clientFactory.createClient(server.getUrl());
     HttpResponse response = client.execute(request);
 
     assertEquals(200, response.getStatus());
 
-    Map<String, Object> topLevel = json.toType(response.getContentString(), MAP_TYPE);
+    Map<String, Object> topLevel = json.toType(string(response), MAP_TYPE);
 
     // There should be a numeric status field
     assertEquals(topLevel.toString(), 0L, topLevel.get("status"));
     // The session id
-    assertTrue(request.getContentString(), topLevel.containsKey("sessionId"));
+    assertTrue(string(request), topLevel.containsKey("sessionId"));
 
     // And the value should be the capabilities.
     Map<?, ?> value = (Map<?, ?>) topLevel.get("value");
-    assertEquals(request.getContentString(), "cheese", value.get("browserName"));
+    assertEquals(string(request), "cheese", value.get("browserName"));
   }
 
   @Test

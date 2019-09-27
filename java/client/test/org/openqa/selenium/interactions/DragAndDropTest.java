@@ -109,6 +109,7 @@ public class DragAndDropTest extends JUnit4TestBase {
   @Ignore(MARIONETTE)
   @NotYetImplemented(SAFARI)
   @NotYetImplemented(EDGE)
+  @NotYetImplemented(CHROME)
   public void testDragAndDropElementWithOffsetInScrolledDiv() {
     driver.get(appServer.whereIs("dragAndDropInsideScrolledDiv.html"));
 
@@ -130,7 +131,6 @@ public class DragAndDropTest extends JUnit4TestBase {
   }
 
   @Test
-  @Ignore(CHROME)
   @Ignore(FIREFOX)
   public void testDragTooFar() {
     driver.get(pages.dragAndDropPage);

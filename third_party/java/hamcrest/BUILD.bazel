@@ -1,0 +1,13 @@
+load("//third_party/java:rules.bzl", "maven_java_import")
+
+licenses(["notice"])
+
+package(default_visibility = ["//visibility:public"])
+
+maven_java_import(
+    name = "hamcrest",
+    coords = "org.hamcrest:hamcrest:jar:2.1",
+    jar = "hamcrest-2.1.jar",
+    srcjar = "hamcrest-2.1-sources.jar",
+)
+

@@ -22,16 +22,19 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableMultimap;
 import com.google.common.collect.ImmutableSet;
 
+import org.openqa.selenium.remote.http.Contents;
 import org.openqa.selenium.remote.http.HttpMethod;
 import org.openqa.selenium.remote.http.HttpRequest;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.UncheckedIOException;
 import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Map;
+import java.util.function.Supplier;
 
 import javax.servlet.http.HttpServletRequest;
 
@@ -39,11 +42,11 @@ import javax.servlet.http.HttpServletRequest;
  * Read-only adapter of {@link HttpServletRequest} to a {@link HttpRequest}. This class is not
  * thread-safe, and you can only expect to read the content once.
  */
-public class ServletRequestWrappingHttpRequest extends HttpRequest {
+class ServletRequestWrappingHttpRequest extends HttpRequest {
 
   private final HttpServletRequest req;
 
-  public ServletRequestWrappingHttpRequest(HttpServletRequest req) {
+  ServletRequestWrappingHttpRequest(HttpServletRequest req) {
     super(HttpMethod.valueOf(req.getMethod()), req.getPathInfo() == null ? "/" : req.getPathInfo());
 
     this.req = req;
@@ -66,17 +69,17 @@ public class ServletRequestWrappingHttpRequest extends HttpRequest {
 
 
   @Override
-  public void removeHeader(String name) {
+  public ServletRequestWrappingHttpRequest removeHeader(String name) {
     throw new UnsupportedOperationException("removeHeader");
   }
 
   @Override
-  public void setHeader(String name, String value) {
+  public ServletRequestWrappingHttpRequest setHeader(String name, String value) {
     throw new UnsupportedOperationException("setHeader");
   }
 
   @Override
-  public void addHeader(String name, String value) {
+  public ServletRequestWrappingHttpRequest addHeader(String name, String value) {
     throw new UnsupportedOperationException("addHeader");
   }
 
@@ -133,21 +136,21 @@ public class ServletRequestWrappingHttpRequest extends HttpRequest {
   }
 
   @Override
-  public void setContent(byte[] data) {
-    throw new UnsupportedOperationException("setContent");
+  public Supplier<InputStream> getContent() {
+    // We need to memoize, but the request input may be too large to fit in
+    // memory.
+
+    return Contents.memoize(() -> {
+      try {
+        return req.getInputStream();
+      } catch (IOException e) {
+        throw new UncheckedIOException(e);
+      }
+    });
   }
 
   @Override
-  public void setContent(InputStream toStreamFrom) {
+  public ServletRequestWrappingHttpRequest setContent(Supplier<InputStream> supplier) {
     throw new UnsupportedOperationException("setContent");
-  }
-
-  @Override
-  public InputStream consumeContentStream() {
-    try {
-      return req.getInputStream();
-    } catch (IOException e) {
-      throw new RuntimeException(e);
-    }
   }
 }

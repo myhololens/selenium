@@ -365,7 +365,10 @@ public class DriverService {
 
       ImmutableList<String> args = createArgs();
 
-      return createDriverService(exe, port, args, environment);
+      DS service = createDriverService(exe, port, args, environment);
+      port = 0; // reset port to allow reusing this builder
+
+      return service;
     }
 
     protected abstract File findDefaultExecutable();

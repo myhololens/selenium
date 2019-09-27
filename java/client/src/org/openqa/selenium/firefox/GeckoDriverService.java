@@ -91,7 +91,7 @@ public class GeckoDriverService extends FirefoxDriverService {
       builder.usingFirefoxBinary(actualBinary);
     }
 
-    return new Builder().build();
+    return builder.build();
   }
 
   @Override
